@@ -11,7 +11,7 @@ from binascii import unhexlify
 from socket import socket
 from django.core.exceptions import ImproperlyConfigured
 from . import NotificationError
-from .settings import PUSH_NOTIFICATIONS_SETTINGS as SETTINGS
+from .settings import DEFAULT_APP_ALIAS, get_apns_settings
 
 
 class APNSError(NotificationError):
@@ -24,7 +24,8 @@ class APNSDataOverflow(APNSError):
 APNS_MAX_NOTIFICATION_SIZE = 256
 
 
-def _apns_create_socket():
+def _apns_create_socket(app_name=DEFAULT_APP_ALIAS):
+	SETTINGS = get_apns_settings(app_name)
 	sock = socket()
 	certfile = SETTINGS.get("APNS_CERTIFICATE")
 	if not certfile:
@@ -50,7 +51,8 @@ def _apns_pack_message(token, data):
 	return struct.pack(format, b"\0", 32, unhexlify(token), len(data), data)
 
 
-def _apns_send(token, alert, badge=0, sound=None, content_available=False, action_loc_key=None, loc_key=None, loc_args=[], extra={}, socket=None):
+def _apns_send(token, alert, badge=0, sound=None, content_available=False, action_loc_key=None, loc_key=None, loc_args=[], extra={}, socket=None,
+				app_name=DEFAULT_APP_ALIAS):
 	data = {}
 	apns_data = {}
 
@@ -89,7 +91,7 @@ def _apns_send(token, alert, badge=0, sound=None, content_available=False, actio
 	if socket:
 		socket.write(data)
 	else:
-		socket = _apns_create_socket()
+		socket = _apns_create_socket(app_name)
 		socket.write(data)
 		socket.close()
 
@@ -118,7 +120,9 @@ def apns_send_bulk_message(registration_ids, alert, **kwargs):
 	it won't be included in the notification. You will need to pass None
 	to this for silent notifications.
 	"""
-	socket = _apns_create_socket()
+	app_name = kwargs.get('app_name', DEFAULT_APP_ALIAS)
+	socket = _apns_create_socket(app_name)
+
 	for registration_id in registration_ids:
 		_apns_send(registration_id, alert, socket=socket, **kwargs)
 

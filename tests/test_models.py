@@ -29,7 +29,8 @@ class ModelTestCase(TestCase):
 			device.send_message("Hello world")
 			p.assert_called_once_with(
 				'registration_id=abc&data.message=Hello+world',
-				'application/x-www-form-urlencoded;charset=UTF-8')
+				'application/x-www-form-urlencoded;charset=UTF-8',
+				None)
 
 	def test_gcm_send_message_extra(self):
 		device = GCMDevice.objects.create(
@@ -39,7 +40,8 @@ class ModelTestCase(TestCase):
 			device.send_message("Hello world", extra={"foo": "bar"})
 			p.assert_called_once_with(
 				'registration_id=abc&data.foo=bar&data.message=Hello+world',
-				'application/x-www-form-urlencoded;charset=UTF-8')
+				'application/x-www-form-urlencoded;charset=UTF-8',
+				None)
 
 	def test_apns_send_message(self):
 		device = APNSDevice.objects.create(

@@ -1,3 +1,4 @@
+from itertools import groupby
 from django.conf import settings
 from django.db import models
 from django.utils.translation import ugettext_lazy as _
@@ -11,6 +12,9 @@ AUTH_USER_MODEL = getattr(settings, "AUTH_USER_MODEL", "auth.User")
 
 class Device(models.Model):
 	name = models.CharField(max_length=255, verbose_name=_("Name"), blank=True, null=True)
+	# `app_name` required to get appropriated config in case of multi app settings
+	app_name = models.CharField(_("Application name"), max_length=255, blank=True, null=True,
+		help_text=_("Application name to which the device belongs"))
 	active = models.BooleanField(verbose_name=_("Is active"), default=True,
 		help_text=_("Inactive devices will not be sent notifications"))
 	user = models.ForeignKey(AUTH_USER_MODEL, blank=True, null=True)
@@ -32,12 +36,20 @@ class GCMDeviceQuerySet(models.query.QuerySet):
 	def send_message(self, message, **kwargs):
 		if self:
 			from .gcm import gcm_send_bulk_message
+
 			data = kwargs.pop("extra", {})
 			if message is not None:
 				data["message"] = message
-			return gcm_send_bulk_message(
-				registration_ids=list(self.values_list("registration_id", flat=True)),
-				data=data)
+
+			results = []
+			regs = self.values_list("registration_id", "app_name")
+			for app_name, group in groupby(regs, key=lambda x: x[1]):
+				registration_ids = [x[0] for x in group]
+				results.append(
+					gcm_send_bulk_message(registration_ids, data, app_name=app_name, **kwargs))
+
+			if results:
+				return results[0] if len(results) == 1 else '\n'.join(results)
 
 
 class GCMDevice(Device):
@@ -58,7 +70,7 @@ class GCMDevice(Device):
 		data = kwargs.pop("extra", {})
 		if message is not None:
 			data["message"] = message
-		return gcm_send_message(registration_id=self.registration_id, data=data, **kwargs)
+		return gcm_send_message(self.registration_id, data, app_name=self.app_name, **kwargs)
 
 
 class APNSDeviceManager(models.Manager):
@@ -70,7 +82,11 @@ class APNSDeviceQuerySet(models.query.QuerySet):
 	def send_message(self, message, **kwargs):
 		if self:
 			from .apns import apns_send_bulk_message
-			return apns_send_bulk_message(registration_ids=list(self.values_list("registration_id", flat=True)), alert=message, **kwargs)
+
+			regs = self.values_list("registration_id", "app_name")
+			for app_name, group in groupby(regs, key=lambda x: x[1]):
+				registration_ids = [x[0] for x in group]
+				apns_send_bulk_message(registration_ids, message, app_name=app_name, **kwargs)
 
 
 class APNSDevice(Device):
@@ -86,4 +102,4 @@ class APNSDevice(Device):
 	def send_message(self, message, **kwargs):
 		from .apns import apns_send_message
 
-		return apns_send_message(registration_id=self.registration_id, alert=message, **kwargs)
+		return apns_send_message(self.registration_id, message, app_name=self.app_name, **kwargs)
